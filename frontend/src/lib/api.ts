@@ -4,7 +4,6 @@ const api = axios.create({
   baseURL: "/api",
 });
 
-// --- ESTO ES LO QUE FALTA ---
 // Agrega el token a todas las peticiones automáticamente
 api.interceptors.request.use((config) => {
   if (typeof window !== "undefined") {
