@@ -32,7 +32,7 @@ app = FastAPI(title="WhatsApp Clone API (Monolítico + Concurrencia Nativa)")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
