@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { chatsApi, authApi } from '@/lib/api';
+import { chatsApi, authApi, usersApi } from '@/lib/api';
 import ChatSidebar from '@/components/chat/ChatSidebar';
 import ChatWindow from '@/components/chat/ChatWindow';
 
@@ -28,15 +28,22 @@ export default function ChatPage() {
   useEffect(() => {
     // Verificamos si hay sesión
     const token = localStorage.getItem('token');
-    const user = localStorage.getItem('chat_user');
 
-    if (!token || !user) {
+    if (!token) {
       router.push('/login');
       return;
     }
 
-    setCurrentUsername(user);
-    fetchChats();
+    // Sanar sesiones antiguas y obtener el verdadero ID/username del backend
+    usersApi.me().then(res => {
+      const trueUsername = res.data.username;
+      setCurrentUsername(trueUsername);
+      localStorage.setItem('chat_user', trueUsername);
+      fetchChats();
+    }).catch(err => {
+      handleLogout();
+    });
+
   }, [router]);
 
   const handleLogout = () => {

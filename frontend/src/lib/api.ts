@@ -39,4 +39,11 @@ export const usersApi = {
 export const chatsApi = {
   list: () => api.get("/messages/chats"),
   createDm: (userId: string) => api.post(`/messages/chats/dm/${userId}`),
+  createGroup: (data: { name: string; participant_ids: string[] }) =>
+    api.post("/messages/chats/group", data),
+  deleteChat: (chatId: string) => api.delete(`/messages/chats/${chatId}`),
+};
+
+export const messagesApi = {
+  getHistory: (chatId: string) => api.get(`/messages/history/${chatId}`),
 };

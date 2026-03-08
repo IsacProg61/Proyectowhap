@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { authApi } from '@/lib/api';
+import { authApi, usersApi } from '@/lib/api';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -21,8 +21,11 @@ export default function LoginPage() {
         // Login Flow
         const res = await authApi.login({ email, password });
         localStorage.setItem('token', res.data.access_token);
-        // Temporarily store the email as "username" for MVP until we fetch the true /me profile
-        localStorage.setItem('chat_user', email);
+
+        // Obtenemos el perfil real para extraer el `username` correcto
+        const profile = await usersApi.me();
+        localStorage.setItem('chat_user', profile.data.username);
+
         router.push('/chat');
 
       } else {
@@ -32,7 +35,11 @@ export default function LoginPage() {
         // Auto-login after successful registration
         const res = await authApi.login({ email, password });
         localStorage.setItem('token', res.data.access_token);
-        localStorage.setItem('chat_user', username);
+
+        // Igual aquí, validamos contra `/me` por seguridad del token
+        const profile = await usersApi.me();
+        localStorage.setItem('chat_user', profile.data.username);
+
         router.push('/chat');
       }
     } catch (err: any) {

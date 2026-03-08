@@ -1,281 +1,89 @@
-# 💬 WhatsApp Clone
+# 💬 WhatsApp Clone (Guía para Developers)
 
-A real-time chat application inspired by WhatsApp, built with **Next.js 14** (frontend) and **FastAPI** (Python backend). Supports authentication, individual DMs, and a shared General group chat for all users.
+¡Bienvenido al código fuente de nuestro **WhatsApp Clone**! Este proyecto es una aplicación de mensajería en tiempo real construida con **Next.js 14** en el Frontend y **FastAPI (Python)** en el Backend, con una base de datos **PostgreSQL**.
 
----
-
-## 📁 Project Structure
-
-```
-whatsapp-clone/
-├── backend/               # Python FastAPI API + WebSocket server
-│   ├── main.py            # App entry point, CORS, router registration
-│   ├── requirements.txt   # Python dependencies
-│   ├── .env.example       # Environment variable template
-│   ├── core/
-│   │   ├── config.py      # App settings (loaded from .env)
-│   │   ├── security.py    # JWT creation/verification, bcrypt helpers
-│   │   └── dependencies.py# FastAPI Depends() for auth guard
-│   ├── routers/
-│   │   ├── auth.py        # POST /api/auth/login, /register, /logout
-│   │   ├── users.py       # GET /api/users/me, /api/users/
-│   │   ├── messages.py    # GET/POST /api/messages/chats/...
-│   │   └── websocket.py   # WS /ws/{chat_id} — real-time broadcasting
-│   ├── schemas/
-│   │   └── schemas.py     # Pydantic request/response models
-│   └── models/            # 📂 Empty — add your ORM models here
-│
-└── frontend/              # Next.js 14 App Router + TypeScript + Tailwind
-    ├── next.config.js
-    ├── tailwind.config.js
-    ├── package.json
-    ├── .env.local.example
-    └── src/
-        ├── app/
-        │   ├── layout.tsx       # Root HTML layout
-        │   ├── page.tsx         # Redirects → /login or /chat
-        │   ├── globals.css      # Tailwind base + global styles
-        │   ├── login/
-        │   │   └── page.tsx     # Login + Register form
-        │   └── chat/
-        │       └── page.tsx     # Main chat UI (sidebar + window)
-        ├── components/
-        │   └── chat/
-        │       ├── ChatSidebar.tsx  # Left panel: chat list
-        │       └── ChatWindow.tsx   # Right panel: messages + input
-        ├── hooks/
-        │   └── useChatSocket.ts # WebSocket hook (connect / send / receive)
-        ├── lib/
-        │   └── api.ts           # Axios client + auth/users/chats helpers
-        └── types/
-            └── index.ts         # Shared TypeScript interfaces
-```
+Si eres un **Desarrollador Junior** o estás aprendiendo sobre arquitecturas modernas, este documento está hecho específicamente para ti. Aquí te explicaremos cómo funciona todo por debajo, con especial atención a **cómo logramos que la aplicación sea extremadamente rápida usando paralelismo y concurrencia en Python**.
 
 ---
 
-## 🚀 Getting Started
+## 🏗️ Arquitectura General
 
-### Prerequisites
+Imagina que la aplicación está dividida en dos grandes mundos que se comunican entre sí:
 
-| Tool | Version |
-|------|---------|
-| Python | 3.11+ |
-| Node.js | 18+ |
-| npm / yarn / pnpm | latest |
+*   **El Frontend (Carpeta `/frontend`):** Es la cara visual de la app. Está hecho con React (Next.js) y Tailwind CSS. Se encarga de mostrar la lista de chats, dibujar las burbujas de colores de los mensajes y recolectar lo que el usuario teclea.
+*   **El Backend (Carpeta `/backend`):** Es el cerebro. Está hecho con **FastAPI** (Python). Su trabajo es verificar que los usuarios existan, guardar los mensajes en la base de datos (PostgreSQL) y mandarle los mensajes nuevos a la persona correcta de forma instantánea.
 
----
-
-### 1. Clone the repository
-
-```bash
-git clone https://github.com/YOUR_USERNAME/whatsapp-clone.git
-cd whatsapp-clone
-```
+La magia de que los mensajes lleguen al instante, sin necesidad de recargar la página web, se llama **WebSockets**. Un WebSocket es como una llamada telefónica directa: la línea se mantiene abierta todo el tiempo, así que cuando alguien envía un mensaje, el servidor (FastAPI) lo grita inmediatamente por el tubo acústico, y el navegador de quien recibe (React) lo atrapa al vuelo.
 
 ---
 
-### 2. Backend Setup
+## ⚡ La Magia Oculta: Concurrencia, Hilos y Procesos en Python
 
-```bash
-cd backend
+Esta es la parte más interesante de este proyecto. Tu backend en Python está diseñado para soportar muchísimo tráfico sin "congelarse". Si te fijas en `backend/main.py`, verás conceptos como `async`, `await`, y Pools de Concurrencia. **¿Por qué programamos esto así?**
 
-# Create virtual environment
-python -m venv venv
+En Python existe algo llamado **GIL (Global Interpreter Lock)**. Es un "candado" interno que solo permite a Python ejecutar código en un solo núcleo (core) del procesador a la vez, por seguridad. Para aplicaciones de chat en tiempo real, esto podría ser un cuello de botella terrible.
 
-# Activate it
-# macOS / Linux:
-source venv/bin/activate
-# Windows:
-venv\Scripts\activate
+Aquí te explicamos cómo burlamos al GIL y logramos un chat veloz:
 
-# Install dependencies
-pip install -r requirements.txt
+### 1. Concurrencia Asíncrona (`async / await`) — El Recepcionista Veloz
+**Para qué sirve:** Para coordinar miles de conexiones Websocket de usuarios en línea.
+*   En `main.py`, la función que abre el chat (`websocket_chat_endpoint`) es asíncrona (`async def`). 
+*   **Concepto JR:** Imagina un restaurante. El mesero asíncrono toma tu orden (recibe el mensaje de Socket) y la manda a la cocina. En lugar de quedarse parado frente a la estufa viendo cómo se fríe la carne, el mesero se va a atender a otras 50 mesas. Cuando la cocina termina tu plato, un timbre suena y el mesero te lo lleva. Esto se llama **Event Loop** de I/O. Mientras lee o escribe en la red, Python atiende a otros.
 
-# Set up environment variables
-cp .env.example .env
-# Edit .env and set a strong SECRET_KEY
-```
+### 2. Piscina de Hilos (`ThreadPoolExecutor`) — Para la Base de Datos
+**Para qué sirve:** Porque nuestra Base de Datos (SQLAlchemy Síncrona) es el "chef lento".
+*   Si usamos al *"Mesero Veloz Asíncrono"* para ir a guardar el mensaje a PostgreSQL usando código tradicional bloqueante (síncrono), el mesero se quedaría trabado, paralizando a todo el restaurante.
+*   **La Solución:** En `main.py` declaramos un `thread_pool`. Cada vez que nos llega un mensaje de chat y tenemos que hablar con la base de datos, metemos esa tarea en ese "pool": `loop.run_in_executor(thread_pool, _save_message_db_task...)`. 
+*   **Concepto JR:** En lugar del mesero, tenemos "ayudantes" (Threads). El mesero le pasa la orden a un ayudante, el ayudante se pelea peleando con la base de datos a su propio ritmo bloqueado, y cuando graba el texto en SQL, le avisa al Event Loop para que envíe el mensaje al frontend. Python permite que los hilos operen en "paralelo" siempre y cuando dependan del Input/Output (Disco Duro / Red) gracias a que el GIL se suelta en esos momentos.
 
-**Start the backend:**
+### 3. Procesos Nativos (`ProcessPoolExecutor`) — Para Tareas Súper Pesadas
+**Para qué sirve:** Para matemática pesada y evadir el candado GIL por completo.
+*   Si tuviéramos que calcular algo fuertísimo, como comprimir el video de un chat o minar bitcoins con la terminal, ni los Hilos ni `async` nos salvarían. El candado (GIL) nos detendría en un solo procesador.
+*   **La Solución:** Declaramos un `ProcessPoolExecutor`. Cuando FastAPI recibe esa petición (ver endpoint `/api/system/heavy-computation`), clona todo el motor de Python y lo lanza a un núcleo distinto de tu CPU de computadora. 
+*   **Concepto JR:** Hemos contratado a cocineros en franquicias que operan de manera totalmente paralela al restaurante original, aprovechando el 100% de la computadora física del servidor host.
 
-```bash
-uvicorn main:app --reload --port 8000
-```
-
-The API will be available at **http://localhost:8000**  
-Interactive docs at **http://localhost:8000/docs**
+**En Resumen:**
+Nuestro backend recibe miles de mensajes fluidamente usando `WebSocket Asíncronos`, inyecta esos mensajes a la DB delegándolos a la basura con `Hilos (Threads)`, y resuelve problemas matemáticos críticos usando `Procesos Nativos`. ¡Una máquina perfecta! 🛠️
 
 ---
 
-### 3. Frontend Setup
+## 🚀 Cómo Empezar Localmente (Tu Guía Práctica)
 
-```bash
-cd ../frontend
+Asegúrate de tener instalado **Python 3.11+** y **Node.js 18+**.
+También asegúrate de que **PostgreSQL** esté instalado y corriendo en tu computadora.
 
-# Install dependencies
-npm install
+### 1. Levantar el Backend (FastAPI)
 
-# Set up environment variables
-cp .env.local.example .env.local
-# (values point to localhost:8000 by default — no changes needed for local dev)
-```
+1. Abre tu terminal.
+2. Ingresa a la carpeta del servidor: `cd backend`
+3. Activa el entorno virtual de Python: `source venv/bin/activate` (o equivalente en Windows).
+4. *(Opcional)* Si eres nuevo, asegúrate de instalar librerías: `pip install -r requirements.txt` (incluyendo `websockets`).
+5. Abre y configura el archivo `.env` que debería apuntar a tu base de datos postgres local:
+   `DATABASE_URL=postgresql://usuario_postgres:password_postgres@localhost:5432/nombre_db_whatsapp`
+6. Enciende el servidor:
+   ```bash
+   uvicorn main:app --reload
+   ```
+7. Tu API estará lista en `http://127.0.0.1:8000`. ¡Puedes visitar `/docs` en tu navegador para ver toda la API documentada por Swagger automáticamente!
 
-**Start the frontend:**
+### 2. Levantar el Frontend (React / Next.js)
 
-```bash
-npm run dev
-```
+1. Abre otra terminal independiente.
+2. Ingresa a la carpeta web: `cd frontend`
+3. *(Opcional)* Instala las dependencias la primera vez: `npm install`
+4. Enciende el Servidor de Next.js:
+   ```bash
+   npm run dev
+   ```
+5. Ve a tu navegador Web y abre: `http://localhost:3000`
 
-The app will be available at **http://localhost:3000**
+### Bonus: ¿Cómo fluye un Chat Visualmente? 🕵️‍♂️
+1. Abres el navegador en `localhost:3000` y haces **Login**.
+2. React ejecuta una petición HTTP REST normal pidiendo tu JWT (Token) para saber que eres auténtico.
+3. React intercepta y llama un Endpoint GET en `/api/messages/history/{chat_id}` para cargar todos los burbujitas de chats pasados y pintarlas de color gris o morado (según tu ID verificado contra el autor de forma sincrónica para que no parpadee).
+4. Mientras, de fondo, React abre el `WebSocket` hacia FastAPI. Todo esto mientras que un efecto estricto (`isMounted`) previene crear túneles dobles zombies.
+5. Haces click en **"Enviar"**. El navegador no hace HTTP, envía un simple envoltorio `ws.send(texto)`.
+6. En FastAPI (`main.py`), tu mesero (Endpoint WS Async) avienta el texto al ayudante de Base de Datos para incrustarlo a PostgreSQL (Thread Pool).
+7. Cuando el Thread devuelve el mensaje *perfecto* que ya trae Timestamp de Sistema exacto (así React no truena su formateo CSS), el WebSocket Broadcast lo propulsa de vuelta no solo a ti, ¡Sino a todos en esa misma sala!
 
----
-
-## 🌐 API Endpoints
-
-### Auth
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/api/auth/register` | Create new account |
-| POST | `/api/auth/login` | Get JWT token |
-| POST | `/api/auth/logout` | Client-side token removal |
-
-### Users
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/users/me` | Get current user profile |
-| GET | `/api/users/` | List all users |
-| GET | `/api/users/{id}` | Get user by ID |
-
-### Messages & Chats
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/messages/chats` | List current user's chats |
-| GET | `/api/messages/chats/{chat_id}` | Get messages (paginated) |
-| POST | `/api/messages/chats/{chat_id}` | Send a message |
-| POST | `/api/messages/chats/dm/{user_id}` | Create/open a DM |
-
-### WebSocket
-```
-ws://localhost:8000/ws/{chat_id}?token=<JWT>
-```
-- Send: `{ "content": "Hello!" }`
-- Receive: `{ "type": "message"|"system", "sender": "...", "content": "...", "timestamp": "..." }`
-
-The **General** chat has `chat_id = "general"` and is visible to all users.
-
----
-
-## 🗄️ Database Integration (Your Part)
-
-The routers contain `TODO` comments marking every place that needs database logic. The stubs are intentionally simple so you can plug in any DB.
-
-### Recommended Stack Options
-
-#### Option A — PostgreSQL + SQLAlchemy (SQL, relational)
-Best for: structured data, ACID transactions, complex queries.
-
-```bash
-pip install sqlalchemy psycopg2-binary alembic
-```
-
-```
-DATABASE_URL=postgresql://user:password@localhost:5432/whatsapp
-```
-
-Suggested schema:
-- `users` — id, username, email, password_hash, display_name, avatar_url, created_at
-- `chats` — id, name, is_group, created_at
-- `chat_participants` — chat_id, user_id (many-to-many)
-- `messages` — id, chat_id, sender_id, content, created_at
-
-#### Option B — MongoDB + Motor (NoSQL, async)
-Best for: flexible schemas, embedded documents, rapid iteration.
-
-```bash
-pip install motor
-```
-
-Collections: `users`, `chats`, `messages`
-
-#### Option C — SQLite (development only)
-Zero-config, already in `requirements.txt` comment. Perfect for quick local testing.
-
-```
-DATABASE_URL=sqlite:///./whatsapp.db
-```
-
----
-
-## ⚡ Concurrency & Real-Time (Your Part)
-
-The WebSocket `ConnectionManager` in `backend/routers/websocket.py` handles in-memory broadcasting within a single server process. For production scale consider:
-
-### Redis Pub/Sub (Recommended for multi-process)
-When you run multiple Uvicorn workers, each process has its own `ConnectionManager`. Use Redis as a message bus:
-
-```bash
-pip install redis
-```
-
-Flow:
-1. Worker A receives a message → publishes to Redis channel `chat:{chat_id}`
-2. All workers subscribe → each broadcasts to their own local connections
-
-### Celery (Background tasks)
-For heavy work like sending email notifications, resizing avatars, or processing file uploads.
-
-```bash
-pip install celery redis
-```
-
-### Token Blacklist (Logout)
-Store invalidated JWTs in Redis with TTL equal to the token expiry:
-
-```python
-redis_client.setex(f"blacklist:{token}", expire_seconds, "1")
-```
-
----
-
-## 🔒 Security Checklist (Before deploying)
-
-- [ ] Change `SECRET_KEY` to a cryptographically random value (`openssl rand -hex 32`)
-- [ ] Set `DATABASE_URL` to a real database (not SQLite)
-- [ ] Add rate limiting (e.g. `slowapi`)
-- [ ] Restrict CORS `allow_origins` to your actual frontend domain
-- [ ] Store passwords with bcrypt (already done via `passlib`)
-- [ ] Use HTTPS in production (reverse proxy: Nginx or Caddy)
-- [ ] Validate and sanitize all inputs
-- [ ] Implement refresh tokens for long-lived sessions
-
----
-
-## 🛠️ Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| Frontend | Next.js 14, React 18, TypeScript |
-| Styling | Tailwind CSS |
-| HTTP Client | Axios |
-| Real-time | WebSocket (native browser API) |
-| Backend | Python 3.11, FastAPI |
-| Auth | JWT (python-jose), bcrypt (passlib) |
-| Config | pydantic-settings |
-| ASGI Server | Uvicorn |
-
----
-
-## 📌 Next Steps
-
-1. **Wire up the database** — replace all `# TODO` stubs in the routers with real ORM calls
-2. **Add file/image messages** — store uploads in S3 or a local volume
-3. **Online presence** — track connected users in Redis, broadcast status changes
-4. **Message read receipts** — add `read_at` timestamp to messages
-5. **Push notifications** — integrate Firebase Cloud Messaging (FCM)
-6. **Dockerize** — add `Dockerfile` + `docker-compose.yml` for easy deployment
-
----
-
-## 📄 License
-
-MIT — free to use for academic and personal projects.
+¡Y Listo! Empieza tu aventura revisando los componentes en `/frontend/src/` y los endpoints en `/backend/main.py`. Mueve cosas, rompe cosas y diviértete programando. 👨‍💻🥳

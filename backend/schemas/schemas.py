@@ -28,3 +28,20 @@ class UserLogin(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str
+
+# --- Schemas de Chats ---
+class GroupChatCreate(BaseModel):
+    name: str
+    participant_ids: list[str]
+
+# --- Schemas de Mensajes ---
+class MessageResponse(BaseModel):
+    id: uuid.UUID
+    chat_id: uuid.UUID
+    sender_id: Optional[uuid.UUID]
+    content: str
+    read_at: Optional[datetime]
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
