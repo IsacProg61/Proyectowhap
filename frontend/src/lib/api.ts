@@ -1,9 +1,9 @@
 import axios from "axios";
 
 // Para desarrollo local, Next.js por defecto intentará usar el puerto 3000.
-// Configuramos baseURL para que le pegue directamente a FastAPI.
+// Utilizamos variables de entorno para apuntar a la nube en despliegue.
 const api = axios.create({
-  baseURL: "http://localhost:8000/api",
+  baseURL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api",
 });
 
 // Agrega el token a todas las peticiones automáticamente

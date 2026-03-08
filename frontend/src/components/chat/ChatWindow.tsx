@@ -47,7 +47,8 @@ export default function ChatWindow({ chat, currentUsername }: { chat?: any; curr
 
         // 2. Conectar al WebSocket
         const token = localStorage.getItem("token");
-        socket = new WebSocket(`ws://localhost:8000/api/ws/chat/${chat.id}?token=${token}`);
+        const wsBaseUrl = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000/api/ws";
+        socket = new WebSocket(`${wsBaseUrl}/chat/${chat.id}?token=${token}`);
 
         socket.onopen = () => {
           console.log("WebSocket Conectado a Sala:", chat.id);
